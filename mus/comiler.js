@@ -75,6 +75,11 @@ var compileHelper = function(time, musexpr) {
 			}],
 			time: time + musexpr.dur
 		};
+	} else if (musexpr.tag == 'rest') {
+		return {
+			notes: [],
+			time: time + musexpr.duration
+		};
 	} else if (musexpr.tag == 'seq') {
 		leftAccum = compileHelper(time, musexpr.left);
 		rightAccum = compileHelper(leftAccum.time, musexpr.right);
@@ -103,7 +108,9 @@ var melody_mus =
 	  left: 
 	   { tag: 'seq',
 		 left: { tag: 'note', pitch: 'a4', dur: 250 },
-		 right: { tag: 'note', pitch: 'b4', dur: 250 } },
+		 right: { tag: 'seq',
+			left: { tag: 'rest', duration: 100 },
+			right: { tag: 'note', pitch: 'b4', dur: 250 } } },
 	  right:
 	   { tag: 'seq',
 		 left: { tag: 'note', pitch: 'c4', dur: 500 },
