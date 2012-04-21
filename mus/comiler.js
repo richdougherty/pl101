@@ -63,13 +63,25 @@ var logFunc = function(name, f) {
 	};
 };
 
+var noteNameToMidi = function(noteName) {
+	var noteOffset = {
+		c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11
+	};
+	var offset = noteOffset[noteName.charAt(0)];
+	var octave = parseInt(noteName.charAt(1));
+
+	var semitoneCount = 12;
+	var midiBase = 12;
+	return midiBase + (octave * semitoneCount) + offset;
+};
+
 var compileHelper = function(time, musexpr) {
 	var leftAccum, rightAccum; // Prevent JSHint hoisting errors
 	if (musexpr.tag == 'note') {
 		return {
 			notes: [{
 				tag: 'note',
-				pitch: musexpr.pitch,
+				pitch: noteNameToMidi(musexpr.pitch),
 				start: time,
 				dur: musexpr.dur
 			}],
@@ -94,6 +106,17 @@ var compileHelper = function(time, musexpr) {
 			notes: mergeNotes(leftAccum.notes, rightAccum.notes),
 			time: Math.max(leftAccum.time, rightAccum.time)
 		};
+	} else if (musexpr.tag == 'repeat') {
+		var repeatAccum = {
+			time: time,
+			notes: []
+		};
+		for (var i = 0; i < musexpr.count; i++) {
+			var sectionAccum = compileHelper(repeatAccum.time, musexpr.section);
+			repeatAccum.time = sectionAccum.time;
+			repeatAccum.notes = mergeNotes(repeatAccum.notes, sectionAccum.notes);			
+		}
+		return repeatAccum;
 	} else {
 		throw 'Unknown expr tag: '+expr.tag;
 	}
@@ -107,7 +130,7 @@ var melody_mus =
 	{ tag: 'seq',
 	  left: 
 	   { tag: 'seq',
-		 left: { tag: 'repeat': section: { tag: 'note', pitch: 'a4', dur: 250 }, count: 3 },
+		 left: { tag: 'repeat', section: { tag: 'note', pitch: 'a4', dur: 250 }, count: 3 },
 		 right: { tag: 'seq',
 			left: { tag: 'rest', duration: 100 },
 			right: { tag: 'note', pitch: 'b4', dur: 250 } } },
