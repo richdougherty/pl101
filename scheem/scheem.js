@@ -22,3 +22,5 @@ testParse("(+ 1 (* x 3))", ["+", "1", ["*", "x", "3"]]);
 testParse("(* n (factorial (- n 1)))", ["*", "n", ["factorial", ["-", "n", "1"]]]);
 // "Allow any number of spaces between atoms..."
 testParse("(a b  c   d)", ["a", "b", "c", "d"]);
+// "...allow spaces around parentheses."
+testParse(" ( a b  (c d )   ) ", ["a", "b", ["c", "d"]]);

@@ -2,7 +2,7 @@ start =
     expression
 
 expression =
-    "(" es:expressionlist ")"
+    optwhitespace "(" optwhitespace es:expressionlist optwhitespace ")" optwhitespace
     { return es; }
   / atom
 
@@ -13,7 +13,13 @@ expressionlist =
     { return [head]; }
 
 whitespace =
-    (" ")+
+    (whitespacechar)+
+
+optwhitespace =
+    (whitespacechar)*
+
+whitespacechar =
+    " "
 
 validchar
     = [0-9a-zA-Z_?!+\-=@#$%^&*/.]
