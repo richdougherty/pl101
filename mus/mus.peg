@@ -1,0 +1,43 @@
+parexpr =
+    l:seqexpr whitespace "|" whitespace r:parexpr
+    { return {tag: "par", left: l, right: r}; }
+  / seqexpr
+
+seqexpr =
+    l:repexpr whitespace r:seqexpr
+    { return {tag: "seq", left: l, right: r}; }
+  / repexpr
+
+repexpr =
+    c:int "*" s:expr
+    { return {tag: "repeat", section: s, count: c}; }
+  / expr
+
+expr =
+    rest
+  / note
+  / "(" e:parexpr")"
+    { return e; }
+
+note =
+    p:pitch d:duration
+    { return {tag: "note", pitch: p, dur: d}; }
+
+rest =
+    "_" d:duration
+    { return {tag: "rest", duration: d}; }
+
+duration =
+    ":" length:int
+    { return length; }
+
+pitch =
+    letter:[a-g] number:[0-8]
+    { return letter+number; }
+
+whitespace =
+    [ \t\n]+
+
+int =
+    digits:[0-9]+
+    { return parseInt(digits.join(''), 10); }
