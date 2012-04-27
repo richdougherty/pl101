@@ -26,3 +26,6 @@ testParse("(a b  c   d)", ["a", "b", "c", "d"]);
 testParse(" ( a b  (c d )   ) ", ["a", "b", ["c", "d"]]);
 // "Then allow newlines and tabs as well."
 testParse("\n\n(\n\ta \t\tb (c\nd)\t   ) ", ["a", "b", ["c", "d"]]);
+//
+testParse("'x", parse("(quote x)"));
+testParse("'(1 2 3)", parse("(quote (1 2 3))"));

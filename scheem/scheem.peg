@@ -1,10 +1,14 @@
 start =
-    expression
+    optwhitespace e:expression optwhitespace
+	{ return e; }
 
 expression =
-    optwhitespace "(" optwhitespace es:expressionlist optwhitespace ")" optwhitespace
+    "(" optwhitespace es:expressionlist optwhitespace ")"
     { return es; }
-  / atom
+  / "'" e:expression
+    { return ["quote", e]; }
+  / a:atom
+    { return a; }
 
 expressionlist =
     head:expression whitespace tail:expressionlist
