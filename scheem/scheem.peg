@@ -17,10 +17,11 @@ expressionlist =
     { return [head]; }
 
 whitespace =
-    (whitespacechar)+
+    ";;" [^\n]* ("\n" optwhitespace)?
+  / whitespacechar optwhitespace
 
 optwhitespace =
-    (whitespacechar)*
+    (whitespace)?
 
 whitespacechar =
     [ \n\t]
