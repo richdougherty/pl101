@@ -24,3 +24,5 @@ testParse("(* n (factorial (- n 1)))", ["*", "n", ["factorial", ["-", "n", "1"]]
 testParse("(a b  c   d)", ["a", "b", "c", "d"]);
 // "...allow spaces around parentheses."
 testParse(" ( a b  (c d )   ) ", ["a", "b", ["c", "d"]]);
+// "Then allow newlines and tabs as well."
+testParse("\n\n(\n\ta \t\tb (c\nd)\t   ) ", ["a", "b", ["c", "d"]]);

@@ -19,7 +19,7 @@ optwhitespace =
     (whitespacechar)*
 
 whitespacechar =
-    " "
+    [ \n\t]
 
 validchar
     = [0-9a-zA-Z_?!+\-=@#$%^&*/.]
