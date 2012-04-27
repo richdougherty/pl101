@@ -20,3 +20,5 @@ function testParse(inputText, expectedAst) {
 testParse("(a b c)", ["a", "b", "c"]);
 testParse("(+ 1 (* x 3))", ["+", "1", ["*", "x", "3"]]);
 testParse("(* n (factorial (- n 1)))", ["*", "n", ["factorial", ["-", "n", "1"]]]);
+// "Allow any number of spaces between atoms..."
+testParse("(a b  c   d)", ["a", "b", "c", "d"]);
