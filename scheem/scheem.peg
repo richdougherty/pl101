@@ -1,0 +1,23 @@
+start =
+    expression
+
+expression =
+    "(" es:expressionlist ")"
+    { return es; }
+  / atom
+
+expressionlist =
+    head:expression whitespace tail:expressionlist
+    { return [head].concat(tail); }
+  / head:expression
+    { return [head]; }
+
+whitespace =
+    " "
+
+validchar
+    = [0-9a-zA-Z_?!+\-=@#$%^&*/.]
+
+atom =
+    chars:validchar+
+        { return chars.join(""); }
