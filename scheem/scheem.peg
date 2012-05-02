@@ -1,34 +1,34 @@
 start =
-    optwhitespace e:expression optwhitespace
-	{ return e; }
+    ws* e:expression ws*
+    { return e; }
 
 expression =
-    "(" optwhitespace es:expressionlist optwhitespace ")"
+    "()"
+    { return "null"; }
+  / "(" ws* car:expression ws+ "." ws+ cdr:expression ")"
+    { return [car, cdr]; }
+  / "(" ws* es:expressionlist ws* ")"
     { return es; }
   / "'" e:expression
-    { return ["quote", e]; }
+    { return ["quote", [e, "null"]]; }
   / a:atom
     { return a; }
 
 expressionlist =
-    head:expression whitespace tail:expressionlist
-    { return [head].concat(tail); }
-  / head:expression
-    { return [head]; }
+    car:expression ws+ cdr:expressionlist
+    { return [car, cdr]; }
+  / car:expression
+    { return [car, "null"]; }
 
-whitespace =
-    ";;" [^\n]* ("\n" optwhitespace)?
-  / whitespacechar optwhitespace
-
-optwhitespace =
-    (whitespace)?
-
-whitespacechar =
-    [ \n\t]
+ws =
+    ";;" [^\n]*
+  / [ \n\t]
 
 validchar
     = [0-9a-zA-Z_?!+\-=@#$%^&*/.]
 
 atom =
-    chars:validchar+
-        { return chars.join(""); }
+    chars:[0-9]+
+    { return parseInt(chars.join(''), 10); }
+  / chars:validchar+
+    { var s = chars.join(""); return (s == ".") ? null : s; }
