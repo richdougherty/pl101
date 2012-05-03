@@ -11,9 +11,16 @@ function msg(/*vals*/) {
 	return und.toArray(arguments).join(''); // TODO: Pretty printing.
 }
 
-function error(vals) {
-	throw msg.apply(null, vals);
+function error(/*vals*/) {
+	var vals = ['Error'].concat(und.toArray(arguments));
+	console.log.apply(vals);
+	throw new Error(msg(vals));
 };
+
+function logThrough(message, value) {
+	console.log(message, value);
+	return value;
+}
 
 ////// Data types //////
 
@@ -21,27 +28,29 @@ function is_null(obj) {
 	return obj == 'null';
 }
 function is_pair(obj) {
-	if (!obj.length) return false;
+	if (!und.isArray(obj)) return false;
 	assert.ok(obj.length == 2, msg('Pair has wrong number of elements:', obj));
 	return true;
 }
+
 function is_list(obj) {
-	return is_null(obj) || is_pair(obj);
+	return is_null(obj) || (is_pair(obj) && is_list(cdr(obj)));
 }
+
 function is_symbol(obj) {
-	return typeof obj == 'string';
+	return und.isString(obj);
 }
 function is_number(obj) {
-	return typeof obj == 'number';
+	return und.isNumber(obj);
 }
 function is_combiner(obj) {
 	return is_operative(obj) || is_applicative(obj);
 }
 function is_operative(obj) {
-	return obj.oper && typeof obj == 'function';
+	return obj.oper && und.isFunction(obj);
 }
 function is_applicative(obj) {
-	return obj.appl && typeof obj == 'function';
+	return obj.appl && typeof und.isFunction(obj);
 }
 function is_anything(obj) {
 	return is_symbol(obj) || is_number(obj) || is_pair(obj) || is_combiner(obj);
@@ -54,8 +63,11 @@ function is_environment(obj) {
 
 // Make a function that checks its arguments and return value
 var checked = function(func, arg_checkers, result_checker) {
+	assert.ok(und.isFunction(func), func);
+	assert.ok(und.isArray(arg_checkers), arg_checkers);
+	assert.ok(und.isFunction(result_checker), result_checker);	
 	return function(/*arguments*/) {
-		und.each(und.zip(arg_checkers, arguments), function(els) {
+		und.each(und.zip(arg_checkers, und.toArray(arguments)), function(els) {
 			var arg_check = els[0], arg = els[1];
 			assert.ok(
 				arg_check(arg),
@@ -77,7 +89,7 @@ var cons = checked(function(a, b) {
 
 var make_pair_accessor = function(i) {
 	return checked(function(pair) {
-		return list[i];
+		return pair[i];
 	}, [is_pair], is_anything);
 };
 var car = make_pair_accessor(0);
@@ -98,7 +110,6 @@ var length = checked(
 	sc_to_js(lookup('length', e)),
 	[is_list], is_number); // no env needed, as applicative?
 */
-
 var length = checked(function(list) {
 	return fold(list, 0, function(val, e) { return val + 1; });
 }, [is_list], is_number);
@@ -108,16 +119,34 @@ var js_array_to_list = function(array) {
 	else { return cons(array[0], js_array_to_list(array.slice(1))); }
 };
 
+var list_to_js_array = function(list) {
+	return fold(list, [], function(arr, e) { return arr.concat([e]); });
+};
+
 // Numbers
 
-var make_number_binop = function(binop) {
-	return checked(new Function("a, b", "a "+op+" b"), [is_number, is_number], is_number);
+var make_number_binop = function(op) {
+	return checked(new Function("a", "b", "return a "+op+" b;"), [is_number, is_number], is_number);
 };
 
 var add = make_number_binop('+');
 var sub = make_number_binop('-');
 var mul = make_number_binop('*');
 var div = make_number_binop('/');
+
+// Tests
+
+assert.ok(is_null("null"));
+assert.ok(!is_null("x"));
+assert.ok(!is_null(cons(1, 2)));
+
+assert.ok(is_pair(cons(1, 2)));
+assert.ok(!is_pair("x"));
+
+assert.ok(is_list("null"));
+assert.ok(is_list(cons(1, "null")));
+assert.ok(is_list(cons(2, cons(1, "null"))));
+assert.ok(!is_list(cons(1, 2)));
 
 ////// Parsing //////
 
@@ -161,25 +190,16 @@ var list_dispatch = function(list) {
 };
 
 // Make a JS function into an operative
-function js_func(func, operand_checks, pass_e) {
-	var oper = function(operands, e) {
-		var js_func_args = fold(operands, [], function(arr, operand) {
-			return arr.concat(operand);
-		});
-		und.each(und.zip(operand_checks, js_func_args), function(els) {
-			var operand_check = els[0];
-			var js_func_arg = els[1];
-			assert.ok(
-				operand_check(js_func_arg),
-				msg('Operand fails check:', js_func_arg, operand_check, func));
-		});
-		assert.ok(is_environment(e));
+// Assume an operand list, not a tree
+js_func_to_operative = checked(function(func, pass_e) {
+	var oper = checked(function(operands, e) {
+		var js_func_args = list_to_js_array(operands);
 		if (pass_e) js_func_args.push(e);
 		return func.apply(null, js_func_args);
-	};
+	}, [is_list, is_environment], is_anything);
 	oper.oper = true;
 	return oper;
-};
+}, [und.isFunction, und.isBoolean], is_operative);
 
 // Create an applicative version of a combiner
 var wrap = checked(function(combiner) {
@@ -187,51 +207,59 @@ var wrap = checked(function(combiner) {
 		var args = map(
 			operands,
 			function(expr) {
-				return sc_eval(expr, e);
+				return evalsc(expr, e);
 			});
-		combiner(args, e);
+		return combiner(args, e);
 	};
 	appl.appl = true;
 	appl.wrapped = combiner; // For unwrapping
 	return appl;
 }, [is_combiner], is_applicative);
-var wrap_ap = wrap(js_func(wrap, [is_applicative], false));
+var wrap_ap = wrap(js_func_to_operative(wrap, false));
 
 var fold = function(list, val, func) {
 	if (list == 'null') {
 		return val;
-	} else if (typeof list == 'array') {
-		var newVal = func(val, list[0]);
+	} else if (is_pair(list)) {
+		var newVal = func(val, car(list));
 		return fold(cdr(list), func(val, car(list)), func);
 	} else {
 		error('Not a list:', list);
 	}
 };
+var foldr = function(list, val, func) {
+	if (list == 'null') {
+		return val;
+	} else if (is_pair(list)) {
+		var cdrVal = foldr(cdr(list), val, func);
+		var carVal = func(cdrVal, car(list));
+		return carVal;
+	} else {
+		error('Not a list:', list);
+	}
+};
+var map = checked(function(list, func) {
+	return reverse(fold(list, "null", function(tail, el) { return cons(func(el), tail); }));
+}, [is_list, und.isFunction], is_list);
+var reverse = checked(function(list) {
+	return fold(list, "null", function(tail, head) { return cons(head, tail); });
+}, [is_list], is_list);
 
+
+assert.deepEqual(reverse("null"), "null");
+assert.deepEqual(reverse(cons(1, "null")), cons(1, "null"));
+assert.deepEqual(reverse(cons(2, cons(1, "null"))), cons(1, cons(2, "null")));
+
+assert.deepEqual(map("null", function(x) { return x * 2; }), "null");
+assert.deepEqual(map(cons(1, "null"), function(x) { return x * 2; }), cons(2, "null"));
+assert.deepEqual(map(cons(2, cons(1, "null")), function(x) { return x * 2; }), cons(4, cons(2, "null")));
 
 var unwrap = function(applicative) {
 	assert.ok(typeof applicative == "function");
 	assert.ok(applicative.combiner); // Wrapped applicatives only
 	return applicative.combiner;
 };
-var unwrap_ap = wrap(js_func(unwrap, [is_applicative], false));
-
-var cons_ap = wrap(js_func(cons, [is_anything, is_anything], true));
-
-var car_ap = wrap(js_func(car, [is_pair], false));
-var cdr_ap = wrap(js_func(cdr, [is_pair], false));
-
-var map = multimethod()
-	.dispatch(list_dispatch)
-	.when('null', function(n, f) {
-		return n;
-	})
-	.when('pair', function(pair, f) {
-		return sc_cons(f(pair.car), sc_map(pai.cdr));
-	})
-	.default(function(invalid, f) {
-		sc_error('Cannot map non-list: '+sc_debugString(invalid));
-	});
+var unwrap_ap = wrap(js_func_to_operative(unwrap, false));
 
 //
 
@@ -248,24 +276,36 @@ var vau_op = function(operands, e) {
 };
 vau_op.oper = true;
 
-function typeof_dispatch(expr) {
-	return typeof expr;
-}
+var lookup = checked(function (sym, e) {
+	return {
+		'+': wrap(js_func_to_operative(add, false)),
+		'*': wrap(js_func_to_operative(mul, false))
+	}[sym];
+}, [is_symbol, is_environment], is_anything);
 
 // FIXME: Another name so don't override JS eval.
-var eval = multimethod()
-	.dispatch(typeof_dispatch)
-	.when('string', function(sym, e) {
-		return sc_lookup(sym, e);
-	})
-	.when('array', function(pair, e) {
-		var operator = pair.car;
-		var operands = pair.cdr;
-		var combiner = sc.eval(operator, e);
-		assert.equal(combiner.tag, 'comb');
-		return combiner.func(operator, e);
-	})
-	.default(function(expr, e) {
-		return expr;
-	});
-var eval_ap = wrap(js_func(eval, [is_anything], true));
+var evalsc = checked(function(obj, e) {
+	if (is_symbol(obj)) {
+		var sym = obj;
+		return lookup(sym, e);
+	} else if (is_pair(obj)) {
+		var combination = obj;
+		var operator = car(combination);
+		var operand_tree = cdr(combination);
+		var combiner = evalsc(operator, e);
+		assert.ok(is_combiner(combiner));
+		return combiner(operand_tree, e);
+	} else {
+		return obj; // e.g. numbers
+	}	
+}, [is_anything, is_environment], is_anything);
+
+var run = function(programText) {
+	var parsed = parse(programText);
+	console.log(parsed);
+	var result = evalsc(parsed, "null");
+	console.log(result);
+}
+
+// ['+', 5, ['*', 2, 3]]
+run('(+ 5 (* 2 3))')
