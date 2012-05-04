@@ -272,6 +272,10 @@ var reverse = checked(function(list) {
 	return fold(list, "null", function(tail, head) { return cons(head, tail); });
 }, [is_list], is_list);
 
+var append = list_match(
+	function(nl, list2) { return list2; },
+	function(list1, list2) { return cons(car(list1), append(cdr(list1), list2)); }
+);
 
 assert.deepEqual(reverse("null"), "null");
 assert.deepEqual(reverse(cons(1, "null")), cons(1, "null"));
@@ -280,6 +284,10 @@ assert.deepEqual(reverse(cons(2, cons(1, "null"))), cons(1, cons(2, "null")));
 assert.deepEqual(map("null", function(x) { return x * 2; }), "null");
 assert.deepEqual(map(cons(1, "null"), function(x) { return x * 2; }), cons(2, "null"));
 assert.deepEqual(map(cons(2, cons(1, "null")), function(x) { return x * 2; }), cons(4, cons(2, "null")));
+assert.deepEqual(append("null", "null"), "null");
+assert.deepEqual(append([1, "null"], "null"), [1, "null"]);
+assert.deepEqual(append("null", [1, "null"]), [1, "null"]);
+assert.deepEqual(append([1, "null"], [2, "null"]), [1, [2, "null"]]);
 
 //// Association lists ////
 
@@ -317,16 +325,36 @@ var unwrap_ap = wrap(js_func_to_operative(unwrap, false));
 
 //
 
-var vau = checked(function(ptree, eparm, body, e) {
-	
-}, [is_scheem, is_scheem, is_scheem, is_environment], is_combiner);
+var bind = checked(function(name_tree, value_tree) {
+	if (is_null(name_tree) && is_null(value_tree)) {
+		return "null";
+	} else if (name_tree == "_") {
+		return "null";
+	} else if (is_symbol(name_tree)) {
+		return cons(cons(name_tree, value_tree), "null");
+	} else if (is_pair(name_tree) && is_pair(value_tree)) {
+		return append(
+			bind(car(name_tree), car(value_tree)),
+			bind(cdr(name_tree), cdr(value_tree))
+		);
+	} else {
+		error("Cannot bind: ", name_tree, value_tree);
+	}
+}, [is_scheem, is_scheem], is_list);
 
-var vau_op = tag_operative(function(operands, e) {
-	// TODO: Check operands properly.
+assert.deepEqual(bind("null", "null"), "null");
+assert.deepEqual(bind("a", 1), [["a", 1], "null"]);
+assert.deepEqual(bind(["a", "b"], [1, 2]), [["a", 1], [["b", 2], "null"]]);
+
+var vau = tag_operative(function(operands, e) {
 	var ptree = car(operands);
-	var eparm = car(cdr(operands));
-	var body = cdr(cdr(operands));
-	return vau(ptree, eparm, body, e);
+	var etree = car(cdr(operands));
+	var body = cons(begin, cdr(cdr(operands)));
+	return tag_operative(function (operands2, e2) {
+		var bindings = append(bind(ptree, operands2), bind(etree, e2));
+		var e3 = cons(bindings, e2);
+		return evalsc(body, e3);
+	});
 });
 
 var begin = tag_operative(logFunc('begin', function(operands, e) {
@@ -335,9 +363,11 @@ var begin = tag_operative(logFunc('begin', function(operands, e) {
 	}));
 }));
 
-var quote = tag_operative(checked(function(operands, e) {
-	return operands;
-}, [is_scheem, is_environment], is_scheem));
+var quote = vau(cons('x', cons('_', cons('x', "null"))));
+
+//var quote = tag_operative(checked(function(operands, e) {
+//	return operands;
+//}, [is_scheem, is_environment], is_scheem));
 
 var define = checked(logFunc('define', function(name, value_operand, e) {
 	var value = evalsc(value_operand, e);
@@ -380,7 +410,8 @@ var baseEnv = function() {
 		'define': js_func_to_operative(define, true),
 		'set!': js_func_to_operative(set, true),
 		'quote': quote,
-		'if': js_func_to_operative(ifsc, true)
+		'if': js_func_to_operative(ifsc, true),
+		'vau': vau
 	}), "null");
 };
 
