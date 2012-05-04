@@ -333,6 +333,10 @@ var begin = tag_operative(logFunc('begin', function(operands, e) {
 	}));
 }));
 
+var quote = tag_operative(checked(function(operands, e) {
+	return operands;
+}, [is_scheem, is_environment], is_scheem));
+
 var define = checked(logFunc('define', function(name, value_operand, e) {
 	var value = evalsc(value_operand, e);
 	var current_scope = car(e);
@@ -359,7 +363,8 @@ var baseEnv = function() {
 		'*': wrap(js_func_to_operative(mul, false)),
 		'begin': begin,
 		'define': js_func_to_operative(define, true),
-		'set!': js_func_to_operative(set, true)
+		'set!': js_func_to_operative(set, true),
+		'quote': quote
 	}), "null");
 };
 
@@ -409,4 +414,6 @@ var run = function(programText) {
 
 // ['+', 5, ['*', 2, 3]]
 //run('(+ 5 (* 2 3))')
-run('(begin (define x 5) (set! x (+ x 1)))')
+run('(begin (define x 5) (set! x (+ x 1)))');
+run("(+ 1 2)");
+run("'(+ 1 2)");
