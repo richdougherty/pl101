@@ -359,6 +359,12 @@ var set = checked(logFunc('set', function(name, value_operand, e) {
 	return value; // Optional.
 }), [is_symbol, is_scheem, is_environment], is_scheem);
 
+var ifsc = checked(function(cond_operand, true_operand, false_operand, e) {
+	var cond_value = evalsc(cond_operand, e);
+	var eval_operand = (cond_value == '#t') ? true_operand : false_operand;
+	return evalsc(eval_operand, e);
+}, [is_scheem, is_scheem, is_scheem, is_environment], is_scheem);
+
 var baseEnv = function() {
 	return cons(js_obj_to_alist({
 		'+': wrap(js_func_to_operative(make_number_binop('+'), false)),
@@ -373,7 +379,8 @@ var baseEnv = function() {
 		'begin': begin,
 		'define': js_func_to_operative(define, true),
 		'set!': js_func_to_operative(set, true),
-		'quote': quote
+		'quote': quote,
+		'if': js_func_to_operative(ifsc, true)
 	}), "null");
 };
 
@@ -427,3 +434,4 @@ run('(begin (define x 5) (set! x (+ x 1)))');
 run("(+ 1 2)");
 run("'(+ 1 2)");
 run("(= 2 (+ 1 1))");
+run("(begin (define x 2) (if (< x 5) 0 10))");
