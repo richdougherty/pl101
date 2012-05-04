@@ -52,8 +52,17 @@ function is_operative(obj) {
 function is_applicative(obj) {
 	return obj.appl && typeof und.isFunction(obj);
 }
-function is_anything(obj) {
+function is_scheem(obj) {
 	return is_symbol(obj) || is_number(obj) || is_pair(obj) || is_combiner(obj);
+}
+function is_anything(obj) {
+	return true;
+}
+function is_either(a, b) {
+	return function(obj) { return a(obj) || b(obj); }
+}
+function is_js_null(obj) {
+	return obj === null;
 }
 
 // Functions
@@ -83,14 +92,24 @@ var checked = function(func, arg_checkers, result_checker) {
 
 // Pairs & lists
 
+// Dispatcher for multimethods operating on lists
+var list_match = function(null_handler, pair_handler) {
+	return function(list /* ... */) {
+		var args = und.toArray(arguments);
+		if (list == "null") { return null_handler.apply(null, arguments); }
+		else if (is_pair(list)) { return pair_handler.apply(null, arguments); }
+		else { error('Not a list'); }
+	};
+};
+
 var cons = checked(function(a, b) {	
 	return [a, b];
-}, [is_anything, is_anything], is_pair);
+}, [is_scheem, is_scheem], is_pair);
 
 var make_pair_accessor = function(i) {
 	return checked(function(pair) {
 		return pair[i];
-	}, [is_pair], is_anything);
+	}, [is_pair], is_scheem);
 };
 var car = make_pair_accessor(0);
 var cdr = make_pair_accessor(1);
@@ -99,7 +118,7 @@ var make_pair_mutator = function(i) {
 	return checked(function(pair, v) {
 		pair[i] = v;
 		return v;
-	}, [is_pair, is_anything], is_anything);
+	}, [is_pair, is_scheem], is_scheem);
 };
 var set_car = make_pair_mutator(0);
 var set_cdr = make_pair_mutator(1);
@@ -182,13 +201,6 @@ testParse("(+\n 1 ;; arg 1\n 2 ;; arg 2\n)", js_array_to_list(["+", "1", "2"]));
 
 testParse("(a . b)", cons("a", "b"));
 
-// Dispatcher for multimethods operating on lists
-var list_dispatch = function(list) {
-	if (list == 'nil') { return 'nil'; }
-	else if (typeof list == 'array') { return 'pair'; }
-	else { return 'invalid'; }
-};
-
 // Make a JS function into an operative
 // Assume an operand list, not a tree
 js_func_to_operative = checked(function(func, pass_e) {
@@ -196,7 +208,7 @@ js_func_to_operative = checked(function(func, pass_e) {
 		var js_func_args = list_to_js_array(operands);
 		if (pass_e) js_func_args.push(e);
 		return func.apply(null, js_func_args);
-	}, [is_list, is_environment], is_anything);
+	}, [is_list, is_environment], is_scheem);
 	oper.oper = true;
 	return oper;
 }, [und.isFunction, und.isBoolean], is_operative);
@@ -217,27 +229,21 @@ var wrap = checked(function(combiner) {
 }, [is_combiner], is_applicative);
 var wrap_ap = wrap(js_func_to_operative(wrap, false));
 
-var fold = function(list, val, func) {
-	if (list == 'null') {
-		return val;
-	} else if (is_pair(list)) {
+var fold = list_match(
+	function(nl, val, func) { return val; },
+	function(list, val, func) {
 		var newVal = func(val, car(list));
 		return fold(cdr(list), func(val, car(list)), func);
-	} else {
-		error('Not a list:', list);
 	}
-};
-var foldr = function(list, val, func) {
-	if (list == 'null') {
-		return val;
-	} else if (is_pair(list)) {
+);
+var foldr = list_match(
+	function(nl, val, func) { return val; },
+	function(list, val, func) {
 		var cdrVal = foldr(cdr(list), val, func);
 		var carVal = func(cdrVal, car(list));
 		return carVal;
-	} else {
-		error('Not a list:', list);
 	}
-};
+);
 var map = checked(function(list, func) {
 	return reverse(fold(list, "null", function(tail, el) { return cons(func(el), tail); }));
 }, [is_list, und.isFunction], is_list);
@@ -254,6 +260,33 @@ assert.deepEqual(map("null", function(x) { return x * 2; }), "null");
 assert.deepEqual(map(cons(1, "null"), function(x) { return x * 2; }), cons(2, "null"));
 assert.deepEqual(map(cons(2, cons(1, "null")), function(x) { return x * 2; }), cons(4, cons(2, "null")));
 
+//// Association lists ////
+
+// Only works with symbol keys for the moment.
+var alist_get = list_match(
+	function(alist, key) { return null; },
+	function(alist, key) {
+		var pair = car(alist);
+		if (car(pair) == key) { return cdr(pair); }
+		else { return alist_get(cdr(alist), key); }
+	}
+);
+var alist_put = function(alist, key, value) {
+	return cons(cons(key, value), alist);
+};
+var js_obj_to_alist = function(obj) {
+	var alist = "null";
+	und.each(obj, function(value, key) { alist = alist_put(alist, key, value); });
+	return alist;
+};
+
+assert.deepEqual(alist_get("null", "a"), null);
+assert.deepEqual(alist_get([["a", 1], "null"], "a"), 1);
+assert.deepEqual(alist_put("null", "a", 1), [["a", 1], "null"]);
+assert.deepEqual(js_obj_to_alist({a: 1}), [["a", 1], "null"]);
+
+////
+
 var unwrap = function(applicative) {
 	assert.ok(typeof applicative == "function");
 	assert.ok(applicative.combiner); // Wrapped applicatives only
@@ -265,7 +298,7 @@ var unwrap_ap = wrap(js_func_to_operative(unwrap, false));
 
 var vau = checked(function(ptree, eparm, body, e) {
 	
-}, [is_anything, is_anything, is_anything, is_environment], is_combiner);
+}, [is_scheem, is_scheem, is_scheem, is_environment], is_combiner);
 
 var vau_op = function(operands, e) {
 	// TODO: Check operands properly.
@@ -276,12 +309,26 @@ var vau_op = function(operands, e) {
 };
 vau_op.oper = true;
 
-var lookup = checked(function (sym, e) {
-	return {
+var baseEnv = function() {
+	return cons(js_obj_to_alist({
 		'+': wrap(js_func_to_operative(add, false)),
 		'*': wrap(js_func_to_operative(mul, false))
-	}[sym];
-}, [is_symbol, is_environment], is_anything);
+	}), "null");
+};
+
+var env_get = list_match(
+	function(nl, sym) { return "null"; },
+	function(env, sym) {
+		var top = car(env);
+		var val = alist_get(top, sym);
+		if (val == null) { return env_get(cdr(env), sym); }
+		else { return val; }
+	}
+);
+
+var lookup = checked(function (sym, e) {
+	return env_get(e, sym);
+}, [is_symbol, is_environment], is_scheem);
 
 // FIXME: Another name so don't override JS eval.
 var evalsc = checked(function(obj, e) {
@@ -297,13 +344,14 @@ var evalsc = checked(function(obj, e) {
 		return combiner(operand_tree, e);
 	} else {
 		return obj; // e.g. numbers
-	}	
-}, [is_anything, is_environment], is_anything);
+	}
+}, [is_scheem, is_environment], is_scheem);
 
 var run = function(programText) {
+	console.log(programText);
 	var parsed = parse(programText);
 	console.log(parsed);
-	var result = evalsc(parsed, "null");
+	var result = evalsc(parsed, baseEnv());
 	console.log(result);
 }
 
