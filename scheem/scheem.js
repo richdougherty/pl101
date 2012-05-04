@@ -160,14 +160,16 @@ var list_to_js_array = function(list) {
 
 // Numbers
 
+var js_boolean_to_symbol = function(bool) {
+	return bool ? "#t" : "#f";
+};
+
 var make_number_binop = function(op) {
 	return checked(new Function("a", "b", "return a "+op+" b;"), [is_number, is_number], is_number);
 };
-
-var add = make_number_binop('+');
-var sub = make_number_binop('-');
-var mul = make_number_binop('*');
-var div = make_number_binop('/');
+var make_number_binpred = function(op) {
+	return checked(new Function("a", "b", "return (a "+op+" b) ? '#t' : '#f';"), [is_number, is_number], is_symbol);
+};
 
 // Tests
 
@@ -359,8 +361,15 @@ var set = checked(logFunc('set', function(name, value_operand, e) {
 
 var baseEnv = function() {
 	return cons(js_obj_to_alist({
-		'+': wrap(js_func_to_operative(add, false)),
-		'*': wrap(js_func_to_operative(mul, false)),
+		'+': wrap(js_func_to_operative(make_number_binop('+'), false)),
+		'-': wrap(js_func_to_operative(make_number_binop('-'), false)),
+		'*': wrap(js_func_to_operative(make_number_binop('*'), false)),
+		'/': wrap(js_func_to_operative(make_number_binop('/'), false)),
+		'<': wrap(js_func_to_operative(make_number_binpred('<'), false)),
+		'<=': wrap(js_func_to_operative(make_number_binpred('<='), false)),
+		'=': wrap(js_func_to_operative(make_number_binpred('=='), false)),
+		'>=': wrap(js_func_to_operative(make_number_binpred('>='), false)),
+		'>': wrap(js_func_to_operative(make_number_binpred('>'), false)),
 		'begin': begin,
 		'define': js_func_to_operative(define, true),
 		'set!': js_func_to_operative(set, true),
@@ -417,3 +426,4 @@ var run = function(programText) {
 run('(begin (define x 5) (set! x (+ x 1)))');
 run("(+ 1 2)");
 run("'(+ 1 2)");
+run("(= 2 (+ 1 1))");
