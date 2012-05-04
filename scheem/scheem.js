@@ -267,7 +267,7 @@ var alist_get = list_match(
 	function(alist, key) { return null; },
 	function(alist, key) {
 		var pair = car(alist);
-		if (car(pair) == key) { return cdr(pair); }
+		if (car(pair) == key) { return pair; }
 		else { return alist_get(cdr(alist), key); }
 	}
 );
@@ -281,7 +281,7 @@ var js_obj_to_alist = function(obj) {
 };
 
 assert.deepEqual(alist_get("null", "a"), null);
-assert.deepEqual(alist_get([["a", 1], "null"], "a"), 1);
+assert.deepEqual(alist_get([["a", 1], "null"], "a"), ["a", 1]);
 assert.deepEqual(alist_put("null", "a", 1), [["a", 1], "null"]);
 assert.deepEqual(js_obj_to_alist({a: 1}), [["a", 1], "null"]);
 
@@ -320,14 +320,15 @@ var env_get = list_match(
 	function(nl, sym) { return "null"; },
 	function(env, sym) {
 		var top = car(env);
-		var val = alist_get(top, sym);
-		if (val == null) { return env_get(cdr(env), sym); }
-		else { return val; }
+		var pair = alist_get(top, sym);
+		if (pair == null) { return env_get(cdr(env), sym); }
+		else { return pair; }
 	}
 );
 
 var lookup = checked(function (sym, e) {
-	return env_get(e, sym);
+	var pair = env_get(e, sym);
+	return cdr(pair);
 }, [is_symbol, is_environment], is_scheem);
 
 // FIXME: Another name so don't override JS eval.
@@ -353,7 +354,7 @@ var run = function(programText) {
 	console.log(parsed);
 	var result = evalsc(parsed, baseEnv());
 	console.log(result);
-}
+};
 
 // ['+', 5, ['*', 2, 3]]
 run('(+ 5 (* 2 3))')
