@@ -349,11 +349,14 @@ var evalsc = checked(function(obj, e) {
 }, [is_scheem, is_environment], is_scheem);
 
 var run = function(programText) {
-	console.log(programText);
+	console.log('Running program >>>>>');
+	console.log('Program:', programText);
 	var parsed = parse(programText);
-	console.log(parsed);
-	var result = evalsc(parsed, baseEnv());
-	console.log(result);
+	console.log('Parsed:', parsed);
+	var e = baseEnv();
+	var result = evalsc(parsed, e);
+	console.log('Environment:', e);
+	console.log('Result:', result);
 };
 
 // ['+', 5, ['*', 2, 3]]
