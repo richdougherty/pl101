@@ -27,10 +27,10 @@ var logFuncCallCount = 0;
 var logFunc = function(name, f) {
 	return function() {
 		if (logFuncOn) {
-			var id = 'call-'+(logFuncCallCount++)+': '+name;
-			console.log(id, arguments);
+			var id = 'call-'+(logFuncCallCount++)+'-'+name;
+			console.log(id, und.toArray(arguments));
 			var result = f.apply(this, arguments);
-			console.log(id, arguments, ' -> ', result);
+			console.log(id, ' -> ', result);
 			return result;
 		} else {
 			return f.apply(this, arguments);
@@ -217,16 +217,19 @@ testParse("(+\n 1 ;; arg 1\n 2 ;; arg 2\n)", js_array_to_list(["+", "1", "2"]));
 
 testParse("(a . b)", cons("a", "b"));
 
+var tag_operative = function(func) {
+	func.oper = true;
+	return func;
+};
+
 // Make a JS function into an operative
 // Assume an operand list, not a tree
-js_func_to_operative = checked(function(func, pass_e) {
-	var oper = checked(function(operands, e) {
+var js_func_to_operative = checked(function(func, pass_e) {
+	return tag_operative(checked(function(operands, e) {
 		var js_func_args = list_to_js_array(operands);
 		if (pass_e) js_func_args.push(e);
 		return func.apply(null, js_func_args);
-	}, [is_list, is_environment], is_scheem);
-	oper.oper = true;
-	return oper;
+	}, [is_list, is_environment], is_scheem));
 }, [und.isFunction, und.isBoolean], is_operative);
 
 // Create an applicative version of a combiner
@@ -249,7 +252,7 @@ var fold = list_match(
 	function(nl, val, func) { return val; },
 	function(list, val, func) {
 		var newVal = func(val, car(list));
-		return fold(cdr(list), func(val, car(list)), func);
+		return fold(cdr(list), newVal, func);
 	}
 );
 var foldr = list_match(
@@ -316,14 +319,19 @@ var vau = checked(function(ptree, eparm, body, e) {
 	
 }, [is_scheem, is_scheem, is_scheem, is_environment], is_combiner);
 
-var vau_op = function(operands, e) {
+var vau_op = tag_operative(function(operands, e) {
 	// TODO: Check operands properly.
 	var ptree = car(operands);
 	var eparm = car(cdr(operands));
 	var body = cdr(cdr(operands));
 	return vau(ptree, eparm, body, e);
-};
-vau_op.oper = true;
+});
+
+var begin = tag_operative(logFunc('begin', function(operands, e) {
+	return fold(operands, "#f", logFunc('beginfold', function(result, operand) {
+		return evalsc(operand, e);
+	}));
+}));
 
 var define = checked(logFunc('define', function(name, value_operand, e) {
 	var value = evalsc(value_operand, e);
@@ -336,11 +344,22 @@ var define = checked(logFunc('define', function(name, value_operand, e) {
 	return value; // Optional.
 }), [is_symbol, is_scheem, is_environment], is_scheem);
 
+var set = checked(logFunc('set', function(name, value_operand, e) {
+	var value = evalsc(value_operand, e);
+	var current_scope = car(e);
+	var current_pair = alist_get(current_scope, name);
+	if (current_pair == null) { error('Undefined, cannot set: '+name); }
+	set_cdr(current_pair, value);
+	return value; // Optional.
+}), [is_symbol, is_scheem, is_environment], is_scheem);
+
 var baseEnv = function() {
 	return cons(js_obj_to_alist({
 		'+': wrap(js_func_to_operative(add, false)),
 		'*': wrap(js_func_to_operative(mul, false)),
-		'define': js_func_to_operative(define, true)
+		'begin': begin,
+		'define': js_func_to_operative(define, true),
+		'set!': js_func_to_operative(set, true)
 	}), "null");
 };
 
@@ -389,5 +408,5 @@ var run = function(programText) {
 };
 
 // ['+', 5, ['*', 2, 3]]
-run('(+ 5 (* 2 3))')
-run('(define x 5)')
+//run('(+ 5 (* 2 3))')
+run('(begin (define x 5) (set! x (+ x 1)))')
