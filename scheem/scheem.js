@@ -22,6 +22,22 @@ function logThrough(message, value) {
 	return value;
 }
 
+var logFuncOn = false;
+var logFuncCallCount = 0;
+var logFunc = function(name, f) {
+	return function() {
+		if (logFuncOn) {
+			var id = 'call-'+(logFuncCallCount++)+': '+name;
+			console.log(id, arguments);
+			var result = f.apply(this, arguments);
+			console.log(id, arguments, ' -> ', result);
+			return result;
+		} else {
+			return f.apply(this, arguments);
+		}
+	};
+};
+
 ////// Data types //////
 
 function is_null(obj) {
@@ -309,15 +325,27 @@ var vau_op = function(operands, e) {
 };
 vau_op.oper = true;
 
+var define = checked(logFunc('define', function(name, value_operand, e) {
+	var value = evalsc(value_operand, e);
+	var current_scope = car(e);
+	var current_pair = alist_get(current_scope, name);
+	if (current_pair != null) { error('Already defined: '+name); }
+	var new_scope = alist_put(current_scope, name, value);
+	// Mutate current env
+	set_car(e, new_scope);
+	return value; // Optional.
+}), [is_symbol, is_scheem, is_environment], is_scheem);
+
 var baseEnv = function() {
 	return cons(js_obj_to_alist({
 		'+': wrap(js_func_to_operative(add, false)),
-		'*': wrap(js_func_to_operative(mul, false))
+		'*': wrap(js_func_to_operative(mul, false)),
+		'define': js_func_to_operative(define, true)
 	}), "null");
 };
 
 var env_get = list_match(
-	function(nl, sym) { return "null"; },
+	function(nl, sym) { return null; },
 	function(env, sym) {
 		var top = car(env);
 		var pair = alist_get(top, sym);
@@ -328,11 +356,12 @@ var env_get = list_match(
 
 var lookup = checked(function (sym, e) {
 	var pair = env_get(e, sym);
+	if (pair == null) error('Cannot find symbol: '+sym);
 	return cdr(pair);
 }, [is_symbol, is_environment], is_scheem);
 
 // FIXME: Another name so don't override JS eval.
-var evalsc = checked(function(obj, e) {
+var evalsc = checked(logFunc('evalsc', function(obj, e) {
 	if (is_symbol(obj)) {
 		var sym = obj;
 		return lookup(sym, e);
@@ -346,7 +375,7 @@ var evalsc = checked(function(obj, e) {
 	} else {
 		return obj; // e.g. numbers
 	}
-}, [is_scheem, is_environment], is_scheem);
+}), [is_scheem, is_environment], is_scheem);
 
 var run = function(programText) {
 	console.log('Running program >>>>>');
@@ -361,3 +390,4 @@ var run = function(programText) {
 
 // ['+', 5, ['*', 2, 3]]
 run('(+ 5 (* 2 3))')
+run('(define x 5)')
