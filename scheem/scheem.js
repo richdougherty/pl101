@@ -158,6 +158,16 @@ var list_to_js_array = function(list) {
 	return fold(list, [], function(arr, e) { return arr.concat([e]); });
 };
 
+var js_to_scheem = function(obj) {
+	if (und.isArray(obj)) {
+		var arr = obj;
+		if (arr.length == 0) { return "null"; }
+		else { return cons(arr[0], js_to_scheem(arr.slice(1))); }
+	} else {
+		return obj;
+	}
+};
+
 // Numbers
 
 var js_boolean_to_symbol = function(bool) {
@@ -363,7 +373,7 @@ var begin = tag_operative(logFunc('begin', function(operands, e) {
 	}));
 }));
 
-var quote = vau(cons('x', cons('_', cons('x', "null"))));
+var quote = vau(js_to_scheem(['x', '_', 'x']));
 
 //var quote = tag_operative(checked(function(operands, e) {
 //	return operands;
