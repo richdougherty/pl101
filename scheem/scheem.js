@@ -162,11 +162,14 @@ var js_to_scheem = function(obj) {
 	if (und.isArray(obj)) {
 		var arr = obj;
 		if (arr.length == 0) { return "null"; }
-		else { return cons(arr[0], js_to_scheem(arr.slice(1))); }
+		else { return cons(js_to_scheem(arr[0]), js_to_scheem(arr.slice(1))); }
 	} else {
 		return obj;
 	}
 };
+
+assert.deepEqual(js_to_scheem([1, 2]), cons(1, cons(2, "null")));
+assert.deepEqual(js_to_scheem([1, [2, 3]]), cons(1, cons(cons(2, cons(3, "null")), "null")));
 
 // Numbers
 
@@ -373,7 +376,31 @@ var begin = tag_operative(logFunc('begin', function(operands, e) {
 	}));
 }));
 
+var list = tag_operative(function(operands, e) {
+	return reverse(fold(operands, "null", logFunc('beginfold', function(result, operand) {
+		return cons(evalsc(operand, e), result);
+	})));
+});
+
 var quote = vau(js_to_scheem(['x', '_', 'x']));
+
+var splice_last = checked(function(list) {
+	assert.ok(is_pair(list));
+	if (cdr(list) == "null") {
+		return car(list);
+	} else {
+		return cons(car(list), splice_last(cdr(list)));
+	}
+}, [is_list], is_list);
+
+assert.deepEqual(splice_last(js_to_scheem(['a', ['b', 'c']])), js_to_scheem(['a', 'b', 'c']));
+
+var list_star = tag_operative(function(operands, e) {
+	return list(splice_last(operands), e);
+});
+
+//var lambda = vau(
+//	js_array_to_list([cons('ptree', 'body']), 'static-env', ]));
 
 //var quote = tag_operative(checked(function(operands, e) {
 //	return operands;
@@ -421,7 +448,9 @@ var baseEnv = function() {
 		'set!': js_func_to_operative(set, true),
 		'quote': quote,
 		'if': js_func_to_operative(ifsc, true),
-		'vau': vau
+		'vau': vau,
+		'list': list,
+		'list*': list_star
 	}), "null");
 };
 
@@ -476,3 +505,4 @@ run("(+ 1 2)");
 run("'(+ 1 2)");
 run("(= 2 (+ 1 1))");
 run("(begin (define x 2) (if (< x 5) 0 10))");
+run("(list (define x 2) (if (< x 5) 0 10))");
