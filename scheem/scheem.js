@@ -1,5 +1,4 @@
 var und = require('underscore');
-var multimethod = require('multimethod');
 var PEG = require('pegjs');
 var deepEqual = require('deep-equal');
 var assert = require('assert');
@@ -22,20 +21,35 @@ function logThrough(message, value) {
 	return value;
 }
 
-var logFuncOn = false;
+var logFuncOn = true;
 var logFuncCallCount = 0;
 var logFunc = function(name, f) {
 	return function() {
 		if (logFuncOn) {
 			var id = 'call-'+(logFuncCallCount++)+'-'+name;
-			console.log(id, und.toArray(arguments));
+			console.log(id, und.map(und.toArray(arguments), scToString));
 			var result = f.apply(this, arguments);
-			console.log(id, ' -> ', result);
+			console.log(id, ' -> ', scToString(result));
 			return result;
 		} else {
 			return f.apply(this, arguments);
 		}
 	};
+};
+
+var scToString = function(sc) {
+	if (is_list(sc)) {
+		var parts = und.map(list_to_js_array(sc), function(el) { return scToString(el); });
+		return "("+(parts.join(' '))+")";
+	} else if (is_pair(sc)) {
+		return "("+scToString(car(sc))+" . "+scToString(cdr(sc))+")";
+	} else if (is_operative(sc)) {
+		return "<oper-"+combiner_name(sc)+">";
+	} else if (is_applicative(sc)) {
+		return "<appl-"+combiner_name(sc)+">";
+	} else {
+		return sc;
+	}
 };
 
 ////// Data types //////
@@ -79,6 +93,9 @@ function is_either(a, b) {
 }
 function is_js_null(obj) {
 	return obj === null;
+}
+function is_js_string(obj) {
+	return typeof obj == 'string';
 }
 
 // Functions
@@ -171,6 +188,10 @@ var js_to_scheem = function(obj) {
 assert.deepEqual(js_to_scheem([1, 2]), cons(1, cons(2, "null")));
 assert.deepEqual(js_to_scheem([1, [2, 3]]), cons(1, cons(cons(2, cons(3, "null")), "null")));
 
+var sc = function(/*arguments*/) {
+	return js_array_to_list(und.toArray(arguments));
+};
+
 // Numbers
 
 var js_boolean_to_symbol = function(bool) {
@@ -232,20 +253,24 @@ testParse("(+\n 1 ;; arg 1\n 2 ;; arg 2\n)", js_array_to_list(["+", "1", "2"]));
 
 testParse("(a . b)", cons("a", "b"));
 
-var tag_operative = function(func) {
-	func.oper = true;
+var tag_operative = function(func, opt_name) {
+	func.oper = opt_name || "anon";
 	return func;
+};
+
+var combiner_name = function(combiner) {
+	return combiner.oper || combiner.appl;
 };
 
 // Make a JS function into an operative
 // Assume an operand list, not a tree
-var js_func_to_operative = checked(function(func, pass_e) {
+var js_func_to_operative = checked(function(func, pass_e, opt_name) {
 	return tag_operative(checked(function(operands, e) {
 		var js_func_args = list_to_js_array(operands);
 		if (pass_e) js_func_args.push(e);
 		return func.apply(null, js_func_args);
-	}, [is_list, is_environment], is_scheem));
-}, [und.isFunction, und.isBoolean], is_operative);
+	}, [is_list, is_environment], is_scheem), opt_name);
+}, [und.isFunction, und.isBoolean, is_js_string], is_operative);
 
 // Create an applicative version of a combiner
 var wrap = checked(function(combiner) {
@@ -257,11 +282,11 @@ var wrap = checked(function(combiner) {
 			});
 		return combiner(args, e);
 	};
-	appl.appl = true;
+	appl.appl = 'wrpd-'+combiner_name(combiner);
 	appl.wrapped = combiner; // For unwrapping
 	return appl;
 }, [is_combiner], is_applicative);
-var wrap_ap = wrap(js_func_to_operative(wrap, false));
+var wrap_op = js_func_to_operative(wrap, false, 'wrap');
 
 var fold = list_match(
 	function(nl, val, func) { return val; },
@@ -334,7 +359,7 @@ var unwrap = function(applicative) {
 	assert.ok(applicative.combiner); // Wrapped applicatives only
 	return applicative.combiner;
 };
-var unwrap_ap = wrap(js_func_to_operative(unwrap, false));
+var unwrap_ap = wrap(js_func_to_operative(unwrap, false, 'unwrap'));
 
 //
 
@@ -367,22 +392,20 @@ var vau = tag_operative(function(operands, e) {
 		var bindings = append(bind(ptree, operands2), bind(etree, e2));
 		var e3 = cons(bindings, e2);
 		return evalsc(body, e3);
-	});
-});
+	}, '@vau');
+}, 'vau');
 
-var begin = tag_operative(logFunc('begin', function(operands, e) {
-	return fold(operands, "#f", logFunc('beginfold', function(result, operand) {
+var begin = tag_operative(function(operands, e) {
+	return fold(operands, "#f", function(result, operand) {
 		return evalsc(operand, e);
-	}));
-}));
+	});
+}, 'begin');
 
 var list = tag_operative(function(operands, e) {
-	return reverse(fold(operands, "null", logFunc('beginfold', function(result, operand) {
+	return reverse(fold(operands, "null", function(result, operand) {
 		return cons(evalsc(operand, e), result);
-	})));
-});
-
-var quote = vau(js_to_scheem(['x', '_', 'x']));
+	}));
+}, 'list');
 
 var splice_last = checked(function(list) {
 	assert.ok(is_pair(list));
@@ -396,11 +419,52 @@ var splice_last = checked(function(list) {
 assert.deepEqual(splice_last(js_to_scheem(['a', ['b', 'c']])), js_to_scheem(['a', 'b', 'c']));
 
 var list_star = tag_operative(function(operands, e) {
-	return list(splice_last(operands), e);
-});
+	return splice_last(list(operands, e));
+}, 'list*');
 
-//var lambda = vau(
-//	js_array_to_list([cons('ptree', 'body']), 'static-env', ]));
+
+var env_get = list_match(
+	function(nl, sym) { return null; },
+	function(env, sym) {
+		var top = car(env);
+		var pair = alist_get(top, sym);
+		if (pair == null) { return env_get(cdr(env), sym); }
+		else { return pair; }
+	}
+);
+
+var lookup = checked(function (sym, e) {
+	var pair = env_get(e, sym);
+	if (pair == null) error('Cannot find symbol: '+sym);
+	return cdr(pair);
+}, [is_symbol, is_environment], is_scheem);
+
+// FIXME: Another name so don't override JS eval.
+var evalsc = logFunc('evalsc', checked(function(obj, e) {
+	if (is_symbol(obj)) {
+		var sym = obj;
+		return lookup(sym, e);
+	} else if (is_pair(obj)) {
+		var combination = obj;
+		var operator = car(combination);
+		var operand_tree = cdr(combination);
+		var combiner = evalsc(operator, e);
+		assert.ok(is_combiner(combiner));
+		console.log('Eval combiner:', combiner_name(combiner));
+		return combiner(operand_tree, e);
+	} else {
+		return obj; // e.g. numbers
+	}
+}, [is_scheem, is_environment], is_scheem));
+eval_op = wrap(js_func_to_operative(evalsc, false, 'eval')); // env given as normal arg
+
+var quote = vau(sc(sc('x'), '_', 'x'));
+
+var lambda = vau(
+	sc(cons('ptree', 'body'), 'static-env',
+		sc(wrap_op, sc(eval_op, sc(list_star, vau, 'ptree', sc(quote, '_'), 'body'), 'static-env'))));
+//		sc(wrap_op, sc(eval_op, sc(list_star, vau, 'ptree', '_', 'body')), 'static-env')));
+	
 
 //var quote = tag_operative(checked(function(operands, e) {
 //	return operands;
@@ -434,75 +498,58 @@ var ifsc = checked(function(cond_operand, true_operand, false_operand, e) {
 
 var baseEnv = function() {
 	return cons(js_obj_to_alist({
-		'+': wrap(js_func_to_operative(make_number_binop('+'), false)),
-		'-': wrap(js_func_to_operative(make_number_binop('-'), false)),
-		'*': wrap(js_func_to_operative(make_number_binop('*'), false)),
-		'/': wrap(js_func_to_operative(make_number_binop('/'), false)),
-		'<': wrap(js_func_to_operative(make_number_binpred('<'), false)),
-		'<=': wrap(js_func_to_operative(make_number_binpred('<='), false)),
-		'=': wrap(js_func_to_operative(make_number_binpred('=='), false)),
-		'>=': wrap(js_func_to_operative(make_number_binpred('>='), false)),
-		'>': wrap(js_func_to_operative(make_number_binpred('>'), false)),
+		'+': wrap(js_func_to_operative(make_number_binop('+'), false, '+')),
+		'-': wrap(js_func_to_operative(make_number_binop('-'), false, '-')),
+		'*': wrap(js_func_to_operative(make_number_binop('*'), false, '*')),
+		'/': wrap(js_func_to_operative(make_number_binop('/'), false, '/')),
+		'<': wrap(js_func_to_operative(make_number_binpred('<'), false, '<')),
+		'<=': wrap(js_func_to_operative(make_number_binpred('<='), false, '<=')),
+		'=': wrap(js_func_to_operative(make_number_binpred('=='), false, '==')),
+		'>=': wrap(js_func_to_operative(make_number_binpred('>='), false, '>=')),
+		'>': wrap(js_func_to_operative(make_number_binpred('>'), false, '>')),
 		'begin': begin,
-		'define': js_func_to_operative(define, true),
-		'set!': js_func_to_operative(set, true),
+		'define': js_func_to_operative(define, true, 'define'),
+		'set!': js_func_to_operative(set, true, 'set!'),
 		'quote': quote,
-		'if': js_func_to_operative(ifsc, true),
+		'if': js_func_to_operative(ifsc, true, 'if'),
 		'vau': vau,
 		'list': list,
-		'list*': list_star
+		'list*': list_star,
+		'cons': wrap(js_func_to_operative(cons, false, 'cons')),
+		'car': wrap(js_func_to_operative(car, false, 'car')),
+		'cdr': wrap(js_func_to_operative(cdr, false, 'cdr')),
+		'set-car!': wrap(js_func_to_operative(set_car, false, 'set-car!')),
+		'set-cdr!': wrap(js_func_to_operative(set_cdr, false, 'set-cdr!')),
+		'lambda': lambda,
+		'eval': eval_op
 	}), "null");
 };
-
-var env_get = list_match(
-	function(nl, sym) { return null; },
-	function(env, sym) {
-		var top = car(env);
-		var pair = alist_get(top, sym);
-		if (pair == null) { return env_get(cdr(env), sym); }
-		else { return pair; }
-	}
-);
-
-var lookup = checked(function (sym, e) {
-	var pair = env_get(e, sym);
-	if (pair == null) error('Cannot find symbol: '+sym);
-	return cdr(pair);
-}, [is_symbol, is_environment], is_scheem);
-
-// FIXME: Another name so don't override JS eval.
-var evalsc = checked(logFunc('evalsc', function(obj, e) {
-	if (is_symbol(obj)) {
-		var sym = obj;
-		return lookup(sym, e);
-	} else if (is_pair(obj)) {
-		var combination = obj;
-		var operator = car(combination);
-		var operand_tree = cdr(combination);
-		var combiner = evalsc(operator, e);
-		assert.ok(is_combiner(combiner));
-		return combiner(operand_tree, e);
-	} else {
-		return obj; // e.g. numbers
-	}
-}), [is_scheem, is_environment], is_scheem);
 
 var run = function(programText) {
 	console.log('Running program >>>>>');
 	console.log('Program:', programText);
 	var parsed = parse(programText);
-	console.log('Parsed:', parsed);
+	console.log('Parsed:', scToString(parsed));
 	var e = baseEnv();
 	var result = evalsc(parsed, e);
-	console.log('Environment:', e);
-	console.log('Result:', result);
+	console.log('Environment:', scToString(e));
+	console.log('Result:', scToString(result));
 };
 
-// ['+', 5, ['*', 2, 3]]
-//run('(+ 5 (* 2 3))')
-run('(begin (define x 5) (set! x (+ x 1)))');
-run("(+ 1 2)");
-run("'(+ 1 2)");
-run("(= 2 (+ 1 1))");
-run("(begin (define x 2) (if (< x 5) 0 10))");
-run("(list (define x 2) (if (< x 5) 0 10))");
+//run('(+ 5 (* 2 3))');
+//run('(begin 1)');
+//run('(begin 1 2)');
+//run('(begin (define x 5) (set! x (+ x 1)))');
+//run("(+ 1 2)");
+//run("'(+ 1 2)");
+//run("(quote 1)");
+//run("(quote (+ 1 2))");
+//run("(= 2 (+ 1 1))");
+//run("(begin (define x 2) (if (< x 5) 0 10))");
+//run("(list (define x 2) (if (< x 5) 0 10))");
+//run("(list* 1 (list 2 3))");
+//run("(vau (x) e e)");
+//run("(eval '1 '())");
+//run("(eval '(+ 1 2) (list (list (cons '+ +))))");
+run("(lambda (x) (+ x 1))");
+//run("((lambda (x) (+ x 1)) 2)");
