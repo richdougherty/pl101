@@ -1,18 +1,14 @@
-var und = require('underscore');
-var PEG = require('pegjs');
-var deepEqual = require('deep-equal');
-var assert = require('assert');
-var fs = require('fs'); // for loading files
+var assert = chai.assert;
 
 ////// Error handling //////
 
 function msg(/*vals*/) {
-	return und.toArray(arguments).join(''); // TODO: Pretty printing.
+	return _.toArray(arguments).join(''); // TODO: Pretty printing.
 }
 
 function error(/*vals*/) {
-	var vals = ['Error'].concat(und.toArray(arguments));
-	console.log.apply(vals);
+	var vals = ['Error'].concat(_.toArray(arguments));
+	console.log('Error', vals);
 	throw new Error(msg(vals));
 };
 
@@ -23,13 +19,18 @@ function logThrough(message, value) {
 
 var logFuncOn = true;
 var logFuncCallCount = 0;
+var logFuncIndent = 0;
 var logFunc = function(name, f) {
 	return function() {
 		if (logFuncOn) {
+			var pad = '';
+			for (var i = 0; i < logFuncIndent; i++) { pad += ' '; }
 			var id = 'call-'+(logFuncCallCount++)+'-'+name;
-			console.log(id, und.map(und.toArray(arguments), scToString));
+			console.log(pad, id, _.map(_.toArray(arguments), scToString));
+			logFuncIndent++;
 			var result = f.apply(this, arguments);
-			console.log(id, ' -> ', scToString(result));
+			logFuncIndent--;
+			console.log(pad, id, ' -> ', scToString(result));
 			return result;
 		} else {
 			return f.apply(this, arguments);
@@ -39,7 +40,7 @@ var logFunc = function(name, f) {
 
 var scToString = function(sc) {
 	if (is_list(sc)) {
-		var parts = und.map(list_to_js_array(sc), function(el) { return scToString(el); });
+		var parts = _.map(list_to_js_array(sc), function(el) { return scToString(el); });
 		return "("+(parts.join(' '))+")";
 	} else if (is_pair(sc)) {
 		return "("+scToString(car(sc))+" . "+scToString(cdr(sc))+")";
@@ -58,7 +59,7 @@ function is_null(obj) {
 	return obj == 'null';
 }
 function is_pair(obj) {
-	if (!und.isArray(obj)) return false;
+	if (!_.isArray(obj)) return false;
 	assert.ok(obj.length == 2, msg('Pair has wrong number of elements:', obj));
 	return true;
 }
@@ -68,19 +69,19 @@ function is_list(obj) {
 }
 
 function is_symbol(obj) {
-	return und.isString(obj);
+	return _.isString(obj);
 }
 function is_number(obj) {
-	return und.isNumber(obj);
+	return _.isNumber(obj);
 }
 function is_combiner(obj) {
 	return is_operative(obj) || is_applicative(obj);
 }
 function is_operative(obj) {
-	return obj.oper && und.isFunction(obj);
+	return obj.oper && _.isFunction(obj);
 }
 function is_applicative(obj) {
-	return obj.appl && typeof und.isFunction(obj);
+	return obj.appl && typeof _.isFunction(obj);
 }
 function is_scheem(obj) {
 	return is_symbol(obj) || is_number(obj) || is_pair(obj) || is_combiner(obj);
@@ -105,11 +106,11 @@ function is_environment(obj) {
 
 // Make a function that checks its arguments and return value
 var checked = function(func, arg_checkers, result_checker) {
-	assert.ok(und.isFunction(func), func);
-	assert.ok(und.isArray(arg_checkers), arg_checkers);
-	assert.ok(und.isFunction(result_checker), result_checker);	
+	assert.ok(_.isFunction(func), func);
+	assert.ok(_.isArray(arg_checkers), arg_checkers);
+	assert.ok(_.isFunction(result_checker), result_checker);	
 	return function(/*arguments*/) {
-		und.each(und.zip(arg_checkers, und.toArray(arguments)), function(els) {
+		_.each(_.zip(arg_checkers, _.toArray(arguments)), function(els) {
 			var arg_check = els[0], arg = els[1];
 			assert.ok(
 				arg_check(arg),
@@ -128,7 +129,7 @@ var checked = function(func, arg_checkers, result_checker) {
 // Dispatcher for multimethods operating on lists
 var list_match = function(null_handler, pair_handler) {
 	return function(list /* ... */) {
-		var args = und.toArray(arguments);
+		var args = _.toArray(arguments);
 		if (list == "null") { return null_handler.apply(null, arguments); }
 		else if (is_pair(list)) { return pair_handler.apply(null, arguments); }
 		else { error('Not a list'); }
@@ -176,7 +177,7 @@ var list_to_js_array = function(list) {
 };
 
 var js_to_scheem = function(obj) {
-	if (und.isArray(obj)) {
+	if (_.isArray(obj)) {
 		var arr = obj;
 		if (arr.length == 0) { return "null"; }
 		else { return cons(js_to_scheem(arr[0]), js_to_scheem(arr.slice(1))); }
@@ -189,7 +190,7 @@ assert.deepEqual(js_to_scheem([1, 2]), cons(1, cons(2, "null")));
 assert.deepEqual(js_to_scheem([1, [2, 3]]), cons(1, cons(cons(2, cons(3, "null")), "null")));
 
 var sc = function(/*arguments*/) {
-	return js_array_to_list(und.toArray(arguments));
+	return js_array_to_list(_.toArray(arguments));
 };
 
 // Numbers
@@ -221,35 +222,26 @@ assert.ok(!is_list(cons(1, 2)));
 
 ////// Parsing //////
 
-// Read file contents
-var data = fs.readFileSync('scheem.peg', 'utf-8');
-// Create my parser
-var parse = PEG.buildParser(data).parse;
-// Do a test
-
 function testParse(inputText, expectedAst) {
-	var ast = parse(inputText);
-	if (!deepEqual(ast, expectedAst)) {
-		console.log("ASTs do not match: ", ast, expectedAst);
-		assert.fail(ast, expectedAst);
-	}
+	var ast = peg.parse(inputText);
+	assert.deepEqual(ast, expectedAst);
 }
 
-testParse("(a b c)", js_array_to_list(["a", "b", "c"]));
-testParse("(+ 1 (* x 3))", js_array_to_list(["+", "1", js_array_to_list(["*", "x", "3"])]));
-testParse("(* n (factorial (- n 1)))", js_array_to_list(["*", "n", js_array_to_list(["factorial", js_array_to_list(["-", "n", "1"])])]));
+testParse("(a b c)", sc("a", "b", "c"));
+testParse("(+ 1 (* x 3))", sc("+", 1, sc("*", "x", 3)));
+testParse("(* n (factorial (- n 1)))", sc("*", "n", sc("factorial", sc("-", "n", 1))));
 // "Allow any number of spaces between atoms..."
-testParse("(a b  c   d)", js_array_to_list(["a", "b", "c", "d"]));
+testParse("(a b  c   d)", sc("a", "b", "c", "d"));
 // "...allow spaces around parentheses."
-testParse(" ( a b  (c d )   ) ", js_array_to_list(["a", "b", js_array_to_list(["c", "d"])]));
+testParse(" ( a b  (c d )   ) ", sc("a", "b", sc("c", "d")));
 // "Then allow newlines and tabs as well."
-testParse("\n\n(\n\ta \t\tb (c\nd)\t   ) ", js_array_to_list(["a", "b", js_array_to_list(["c", "d"])]));
+testParse("\n\n(\n\ta \t\tb (c\nd)\t   ) ", sc("a", "b", sc("c", "d")));
 // Quotes
-testParse("'x", parse("(quote x)"));
-testParse("'(1 2 3)", parse("(quote (1 2 3))"));
+testParse("'x", peg.parse("(quote x)"));
+testParse("'(1 2 3)", peg.parse("(quote (1 2 3))"));
 // Comments
 testParse("x ;; the letter x", "x");
-testParse("(+\n 1 ;; arg 1\n 2 ;; arg 2\n)", js_array_to_list(["+", "1", "2"]));
+testParse("(+\n 1 ;; arg 1\n 2 ;; arg 2\n)", sc("+", 1, 2));
 
 testParse("(a . b)", cons("a", "b"));
 
@@ -270,10 +262,10 @@ var js_func_to_operative = checked(function(func, pass_e, opt_name) {
 		if (pass_e) js_func_args.push(e);
 		return func.apply(null, js_func_args);
 	}, [is_list, is_environment], is_scheem), opt_name);
-}, [und.isFunction, und.isBoolean, is_js_string], is_operative);
+}, [_.isFunction, _.isBoolean, is_js_string], is_operative);
 
 // Create an applicative version of a combiner
-var wrap = checked(function(combiner) {
+var wrap_combiner = checked(function(combiner) {
 	var appl = function(operands, e) {
 		var args = map(
 			operands,
@@ -286,7 +278,13 @@ var wrap = checked(function(combiner) {
 	appl.wrapped = combiner; // For unwrapping
 	return appl;
 }, [is_combiner], is_applicative);
-var wrap_op = js_func_to_operative(wrap, false, 'wrap');
+
+// Create an applicative version of a scheem expression that evaluates to a combiner
+var wrap = tag_operative(logFunc('wrap', checked(function(combiner_operand, e) {
+	assert.ok(is_null(cdr(combiner_operand)));
+	var combiner = evalsc(car(combiner_operand), e);
+	return wrap_combiner(combiner);
+}, [is_scheem, is_environment], is_applicative)), 'wrap');
 
 var fold = list_match(
 	function(nl, val, func) { return val; },
@@ -305,7 +303,7 @@ var foldr = list_match(
 );
 var map = checked(function(list, func) {
 	return reverse(fold(list, "null", function(tail, el) { return cons(func(el), tail); }));
-}, [is_list, und.isFunction], is_list);
+}, [is_list, _.isFunction], is_list);
 var reverse = checked(function(list) {
 	return fold(list, "null", function(tail, head) { return cons(head, tail); });
 }, [is_list], is_list);
@@ -343,7 +341,7 @@ var alist_put = function(alist, key, value) {
 };
 var js_obj_to_alist = function(obj) {
 	var alist = "null";
-	und.each(obj, function(value, key) { alist = alist_put(alist, key, value); });
+	_.each(obj, function(value, key) { alist = alist_put(alist, key, value); });
 	return alist;
 };
 
@@ -359,7 +357,7 @@ var unwrap = function(applicative) {
 	assert.ok(applicative.combiner); // Wrapped applicatives only
 	return applicative.combiner;
 };
-var unwrap_ap = wrap(js_func_to_operative(unwrap, false, 'unwrap'));
+var unwrap_ap = wrap_combiner(js_func_to_operative(unwrap, false, 'unwrap'));
 
 //
 
@@ -384,7 +382,7 @@ assert.deepEqual(bind("null", "null"), "null");
 assert.deepEqual(bind("a", 1), [["a", 1], "null"]);
 assert.deepEqual(bind(["a", "b"], [1, 2]), [["a", 1], [["b", 2], "null"]]);
 
-var vau = tag_operative(function(operands, e) {
+var vau = tag_operative(function(operands, e, opt_name) {
 	var ptree = car(operands);
 	var etree = car(cdr(operands));
 	var body = cons(begin, cdr(cdr(operands)));
@@ -392,7 +390,7 @@ var vau = tag_operative(function(operands, e) {
 		var bindings = append(bind(ptree, operands2), bind(etree, e2));
 		var e3 = cons(bindings, e2);
 		return evalsc(body, e3);
-	}, '@vau');
+	}, opt_name || '@vau');
 }, 'vau');
 
 var begin = tag_operative(function(operands, e) {
@@ -456,15 +454,14 @@ var evalsc = logFunc('evalsc', checked(function(obj, e) {
 		return obj; // e.g. numbers
 	}
 }, [is_scheem, is_environment], is_scheem));
-eval_op = wrap(js_func_to_operative(evalsc, false, 'eval')); // env given as normal arg
+eval_op = wrap_combiner(js_func_to_operative(evalsc, false, 'eval')); // env given as normal arg
 
-var quote = vau(sc(sc('x'), '_', 'x'));
+var quote = vau(sc(sc('x'), '_', 'x'), sc(), 'quote');
 
 var lambda = vau(
 	sc(cons('ptree', 'body'), 'static-env',
-		sc(wrap_op, sc(eval_op, sc(list_star, vau, 'ptree', sc(quote, '_'), 'body'), 'static-env'))));
-//		sc(wrap_op, sc(eval_op, sc(list_star, vau, 'ptree', '_', 'body')), 'static-env')));
-	
+		sc(wrap, sc(eval_op, sc(list_star, vau, 'ptree', sc(quote, '_'), 'body'), 'static-env'))),
+	sc(), 'lambda');
 
 //var quote = tag_operative(checked(function(operands, e) {
 //	return operands;
@@ -498,15 +495,15 @@ var ifsc = checked(function(cond_operand, true_operand, false_operand, e) {
 
 var baseEnv = function() {
 	return cons(js_obj_to_alist({
-		'+': wrap(js_func_to_operative(make_number_binop('+'), false, '+')),
-		'-': wrap(js_func_to_operative(make_number_binop('-'), false, '-')),
-		'*': wrap(js_func_to_operative(make_number_binop('*'), false, '*')),
-		'/': wrap(js_func_to_operative(make_number_binop('/'), false, '/')),
-		'<': wrap(js_func_to_operative(make_number_binpred('<'), false, '<')),
-		'<=': wrap(js_func_to_operative(make_number_binpred('<='), false, '<=')),
-		'=': wrap(js_func_to_operative(make_number_binpred('=='), false, '==')),
-		'>=': wrap(js_func_to_operative(make_number_binpred('>='), false, '>=')),
-		'>': wrap(js_func_to_operative(make_number_binpred('>'), false, '>')),
+		'+': wrap_combiner(js_func_to_operative(make_number_binop('+'), false, '+')),
+		'-': wrap_combiner(js_func_to_operative(make_number_binop('-'), false, '-')),
+		'*': wrap_combiner(js_func_to_operative(make_number_binop('*'), false, '*')),
+		'/': wrap_combiner(js_func_to_operative(make_number_binop('/'), false, '/')),
+		'<': wrap_combiner(js_func_to_operative(make_number_binpred('<'), false, '<')),
+		'<=': wrap_combiner(js_func_to_operative(make_number_binpred('<='), false, '<=')),
+		'=': wrap_combiner(js_func_to_operative(make_number_binpred('=='), false, '==')),
+		'>=': wrap_combiner(js_func_to_operative(make_number_binpred('>='), false, '>=')),
+		'>': wrap_combiner(js_func_to_operative(make_number_binpred('>'), false, '>')),
 		'begin': begin,
 		'define': js_func_to_operative(define, true, 'define'),
 		'set!': js_func_to_operative(set, true, 'set!'),
@@ -515,11 +512,11 @@ var baseEnv = function() {
 		'vau': vau,
 		'list': list,
 		'list*': list_star,
-		'cons': wrap(js_func_to_operative(cons, false, 'cons')),
-		'car': wrap(js_func_to_operative(car, false, 'car')),
-		'cdr': wrap(js_func_to_operative(cdr, false, 'cdr')),
-		'set-car!': wrap(js_func_to_operative(set_car, false, 'set-car!')),
-		'set-cdr!': wrap(js_func_to_operative(set_cdr, false, 'set-cdr!')),
+		'cons': wrap_combiner(js_func_to_operative(cons, false, 'cons')),
+		'car': wrap_combiner(js_func_to_operative(car, false, 'car')),
+		'cdr': wrap_combiner(js_func_to_operative(cdr, false, 'cdr')),
+		'set-car!': wrap_combiner(js_func_to_operative(set_car, false, 'set-car!')),
+		'set-cdr!': wrap_combiner(js_func_to_operative(set_cdr, false, 'set-cdr!')),
 		'lambda': lambda,
 		'eval': eval_op
 	}), "null");
@@ -528,7 +525,7 @@ var baseEnv = function() {
 var run = function(programText) {
 	console.log('Running program >>>>>');
 	console.log('Program:', programText);
-	var parsed = parse(programText);
+	var parsed = peg.parse(programText);
 	console.log('Parsed:', scToString(parsed));
 	var e = baseEnv();
 	var result = evalsc(parsed, e);
@@ -552,4 +549,4 @@ var run = function(programText) {
 //run("(eval '1 '())");
 //run("(eval '(+ 1 2) (list (list (cons '+ +))))");
 run("(lambda (x) (+ x 1))");
-//run("((lambda (x) (+ x 1)) 2)");
+run("((lambda (x) (+ x 1)) 2)");
