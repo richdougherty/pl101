@@ -352,11 +352,9 @@ assert.deepEqual(js_obj_to_alist({a: 1}), [["a", 1], "null"]);
 
 ////
 
-var unwrap = function(applicative) {
-	assert.ok(typeof applicative == "function");
-	assert.ok(applicative.combiner); // Wrapped applicatives only
-	return applicative.combiner;
-};
+var unwrap = checked(function(applicative) {
+	return applicative.wrapped;
+}, [is_applicative], is_combiner);
 var unwrap_ap = wrap_combiner(js_func_to_operative(unwrap, false, 'unwrap'));
 
 //
@@ -456,13 +454,6 @@ var evalsc = logFunc('evalsc', checked(function(obj, e) {
 }, [is_scheem, is_environment], is_scheem));
 eval_op = wrap_combiner(js_func_to_operative(evalsc, false, 'eval')); // env given as normal arg
 
-var quote = vau(sc(sc('x'), '_', 'x'), sc(), 'quote');
-
-var lambda = vau(
-	sc(cons('ptree', 'body'), 'static-env',
-		sc(wrap, sc(eval_op, sc(list_star, vau, 'ptree', sc(quote, '_'), 'body'), 'static-env'))),
-	sc(), 'lambda');
-
 //var quote = tag_operative(checked(function(operands, e) {
 //	return operands;
 //}, [is_scheem, is_environment], is_scheem));
@@ -494,7 +485,7 @@ var ifsc = checked(function(cond_operand, true_operand, false_operand, e) {
 }, [is_scheem, is_scheem, is_scheem, is_environment], is_scheem);
 
 var baseEnv = function() {
-	return cons(js_obj_to_alist({
+	var e = cons(js_obj_to_alist({
 		'+': wrap_combiner(js_func_to_operative(make_number_binop('+'), false, '+')),
 		'-': wrap_combiner(js_func_to_operative(make_number_binop('-'), false, '-')),
 		'*': wrap_combiner(js_func_to_operative(make_number_binop('*'), false, '*')),
@@ -507,7 +498,6 @@ var baseEnv = function() {
 		'begin': begin,
 		'define': js_func_to_operative(define, true, 'define'),
 		'set!': js_func_to_operative(set, true, 'set!'),
-		'quote': quote,
 		'if': js_func_to_operative(ifsc, true, 'if'),
 		'vau': vau,
 		'list': list,
@@ -517,9 +507,37 @@ var baseEnv = function() {
 		'cdr': wrap_combiner(js_func_to_operative(cdr, false, 'cdr')),
 		'set-car!': wrap_combiner(js_func_to_operative(set_car, false, 'set-car!')),
 		'set-cdr!': wrap_combiner(js_func_to_operative(set_cdr, false, 'set-cdr!')),
-		'lambda': lambda,
-		'eval': eval_op
+		'eval': eval_op,
+		'wrap': wrap,
+		'unwrap': unwrap_ap,
+		'null': 'null'
 	}), "null");
+	
+	// TODO: Try to implement this in scheem itself?!
+	function define_fixed(name, definitionText) {
+		var ast = peg.parse(definitionText);
+		function fix(obj) {
+			if (is_null(obj)) { return "null"; }
+			else if (is_pair(obj)) { return cons(fix(car(obj)), fix(cdr(obj))); }
+			else if (is_symbol(obj)) {
+				var pair = env_get(e, name);
+				if (pair) {
+					return cdr(pair);
+				} else {
+					return obj; // Not in env.
+				}
+			} else {
+				return obj;
+			}
+		};
+		var fixedAst = fix(ast);
+		define(name, fixedAst, e);
+	};
+	define_fixed('quote', '(vau (x) _ x)');
+	define_fixed('lambda', '(vau (ptree . body) static-env ' +
+		"(wrap (eval (list* vau ptree '_ body) static-env)))");
+	define_fixed('apply', '(lambda (c x e) (eval (cons (unwrap c) x) e))');
+	return e;
 };
 
 var run = function(programText) {
@@ -539,8 +557,8 @@ var run = function(programText) {
 //run('(begin (define x 5) (set! x (+ x 1)))');
 //run("(+ 1 2)");
 //run("'(+ 1 2)");
-//run("(quote 1)");
-//run("(quote (+ 1 2))");
+run("(quote 1)");
+run("(quote (+ 1 2))");
 //run("(= 2 (+ 1 1))");
 //run("(begin (define x 2) (if (< x 5) 0 10))");
 //run("(list (define x 2) (if (< x 5) 0 10))");
@@ -550,3 +568,4 @@ var run = function(programText) {
 //run("(eval '(+ 1 2) (list (list (cons '+ +))))");
 run("(lambda (x) (+ x 1))");
 run("((lambda (x) (+ x 1)) 2)");
+run("(apply + (list 1 2) ())");
