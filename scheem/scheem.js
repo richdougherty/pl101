@@ -370,7 +370,7 @@ var bind = checked(function(name_tree, value_tree) {
 		return "null";
 	} else if (name_tree == "_") {
 		return "null";
-	} else if (is_symbol(name_tree)) {
+	} else if (is_symbol(name_tree) && !is_null(name_tree)) {
 		return cons(cons(name_tree, value_tree), "null");
 	} else if (is_pair(name_tree) && is_pair(value_tree)) {
 		return append(
@@ -385,6 +385,13 @@ var bind = checked(function(name_tree, value_tree) {
 assert.deepEqual(bind("null", "null"), "null");
 assert.deepEqual(bind("a", 1), [["a", 1], "null"]);
 assert.deepEqual(bind(["a", "b"], [1, 2]), [["a", 1], [["b", 2], "null"]]);
+assert.deepEqual(
+	scToString(bind(
+		peg.parse("((test . body) rest)"),
+		peg.parse("(((null? ()) 0) (#t 1))")
+	)),
+	scToString(peg.parse("((test . (null? ())) (body 0) (rest #t 1))"))
+);
 
 var vau = tag_operative(function(operands, e, opt_name) {
 	var ptree = car(operands);
@@ -517,7 +524,10 @@ var baseEnv = function() {
 		'eval': eval_op,
 		'wrap': wrap,
 		'unwrap': unwrap_ap,
-		'null': 'null'
+		// TODO: Check how symbol evaluation actually works. This is probably a hack.
+		'null': 'null',
+		'#t': '#t',
+		'#f': '#f'
 	}), "null");
 	
 	// TODO: Try to implement this in scheem itself?!
@@ -545,6 +555,8 @@ var baseEnv = function() {
 		"(wrap (eval (list* vau ptree '_ body) static-env)))");
 	define_fixed('apply', '(lambda (c x e) (eval (cons (unwrap c) x) e))');
 	define_fixed('null?', "(lambda (x) (eqv? x 'null))");
+	define_fixed('cond', "(vau ((test body) . rest) e " +
+		"(if (eval test e) (eval body e) (eval (cons cond rest) e)))");
 	return e;
 };
 
@@ -561,9 +573,16 @@ var run = function(programText) {
 
 var testRun = function(programText, resultText) {
 	console.log('Testing ', programText, ' -> ', resultText);
-	assert.deepEqual(scToString(evalsc(peg.parse(programText), baseEnv())), resultText);
+	var e = baseEnv();
+	//logFuncOn = true;
+	assert.deepEqual(scToString(evalsc(peg.parse(programText), e)), resultText);
 }
 
+testRun("(if (null? ()) 0 1)", "0");
+testRun("(if (null? (list 1 2)) 0 1)", "1");
+testRun("(cond ((null? ()) 0) (#t 1))", "0");
+testRun("(cond ((null? (list 1 2)) 0) (#t 1))", "1");
+testRun("(begin (define a 'z) (cond ((eqv? a 'x) 1) ((eqv? a 'y) 2) ((eqv? a 'z) 3) (#t 4)))", "3");
 testRun("(null? ())", "#t");
 testRun("(null? (list 1 2))", "#f");
 testRun('(eqv? 1 1)', '#t');
