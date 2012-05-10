@@ -17,7 +17,7 @@ function logThrough(message, value) {
 	return value;
 }
 
-var logFuncOn = true;
+var logFuncOn = false;
 var logFuncCallCount = 0;
 var logFuncIndent = 0;
 var logFunc = function(name, f) {
@@ -49,7 +49,7 @@ var scToString = function(sc) {
 	} else if (is_applicative(sc)) {
 		return "<appl-"+combiner_name(sc)+">";
 	} else {
-		return sc;
+		return ''+sc;
 	}
 };
 
@@ -123,6 +123,12 @@ var checked = function(func, arg_checkers, result_checker) {
 		return result;
 	}
 }
+
+// General
+
+var eqv = checked(function(a, b) {
+	return js_boolean_to_symbol((typeof a == typeof b) && (a == b));
+}, [is_scheem, is_scheem], is_symbol);
 
 // Pairs & lists
 
@@ -446,7 +452,7 @@ var evalsc = logFunc('evalsc', checked(function(obj, e) {
 		var operand_tree = cdr(combination);
 		var combiner = evalsc(operator, e);
 		assert.ok(is_combiner(combiner));
-		console.log('Eval combiner:', combiner_name(combiner));
+		//console.log('Eval combiner:', combiner_name(combiner));
 		return combiner(operand_tree, e);
 	} else {
 		return obj; // e.g. numbers
@@ -486,6 +492,7 @@ var ifsc = checked(function(cond_operand, true_operand, false_operand, e) {
 
 var baseEnv = function() {
 	var e = cons(js_obj_to_alist({
+		'eqv?': wrap_combiner(js_func_to_operative(eqv, false, 'eqv?')),
 		'+': wrap_combiner(js_func_to_operative(make_number_binop('+'), false, '+')),
 		'-': wrap_combiner(js_func_to_operative(make_number_binop('-'), false, '-')),
 		'*': wrap_combiner(js_func_to_operative(make_number_binop('*'), false, '*')),
@@ -537,6 +544,7 @@ var baseEnv = function() {
 	define_fixed('lambda', '(vau (ptree . body) static-env ' +
 		"(wrap (eval (list* vau ptree '_ body) static-env)))");
 	define_fixed('apply', '(lambda (c x e) (eval (cons (unwrap c) x) e))');
+	define_fixed('null?', "(lambda (x) (eqv? x 'null))");
 	return e;
 };
 
@@ -551,21 +559,32 @@ var run = function(programText) {
 	console.log('Result:', scToString(result));
 };
 
-//run('(+ 5 (* 2 3))');
-//run('(begin 1)');
-//run('(begin 1 2)');
-//run('(begin (define x 5) (set! x (+ x 1)))');
-//run("(+ 1 2)");
-//run("'(+ 1 2)");
-run("(quote 1)");
-run("(quote (+ 1 2))");
-//run("(= 2 (+ 1 1))");
-//run("(begin (define x 2) (if (< x 5) 0 10))");
-//run("(list (define x 2) (if (< x 5) 0 10))");
-//run("(list* 1 (list 2 3))");
-//run("(vau (x) e e)");
-//run("(eval '1 '())");
-//run("(eval '(+ 1 2) (list (list (cons '+ +))))");
-run("(lambda (x) (+ x 1))");
-run("((lambda (x) (+ x 1)) 2)");
-run("(apply + (list 1 2) ())");
+var testRun = function(programText, resultText) {
+	console.log('Testing ', programText, ' -> ', resultText);
+	assert.deepEqual(scToString(evalsc(peg.parse(programText), baseEnv())), resultText);
+}
+
+testRun("(null? ())", "#t");
+testRun("(null? (list 1 2))", "#f");
+testRun('(eqv? 1 1)', '#t');
+testRun('(eqv? 1 2)', '#f');
+testRun("(eqv? 'x 2)", '#f');
+testRun('(eqv? null null)', '#t');
+testRun('(+ 5 (* 2 3))', '11');
+testRun('(begin 1)', '1');
+testRun('(begin 1 2)', '2');
+testRun('(begin (define x 5) (set! x (+ x 1)) x)', '6');
+testRun("(+ 1 2)", '3');
+testRun("'(+ 1 2)", '(+ 1 2)');
+testRun("(quote 1)", '1');
+testRun("(quote (+ 1 2))", '(+ 1 2)');
+testRun("(= 2 (+ 1 1))", '#t');
+testRun("(begin (define x 2) (if (< x 5) 0 10))", '0');
+testRun("(list (define x 2) (if (< x 5) 0 10))", '(2 0)');
+testRun("(list* 1 (list 2 3))", '(1 2 3)');
+testRun("(vau (x) e e)", '<oper-@vau>');
+testRun("(eval '1 '())", '1');
+testRun("(eval '(+ 1 2) (list (list (cons '+ +))))", '3');
+testRun("(lambda (x) (+ x 1))", '<appl-wrpd-@vau>');
+testRun("((lambda (x) (+ x 1)) 2)", '3');
+testRun("(apply + (list 1 2) ())", '3');
