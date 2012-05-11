@@ -560,7 +560,7 @@ var baseEnv = function() {
 		"(if (eval test e) (eval body e) (eval (cons cond rest) e)))");
 	define_fixed('map', "(lambda (f l) (if (null? l) 'null (cons (f (car l)) (map f (cdr l)))))");
 	define_fixed('unzip', "(lambda (l) (list (map (lambda ((n v)) n) l) (map (lambda ((n v)) v) l)))")
-	//define_fixed('let', "(vau (bindings . body) e (eval (cons begin body) (cons bindings e)))")
+	define_fixed('let', "(vau (bindings . body) e (eval (cons begin body) (cons bindings e)))")
 	return e;
 };
 
@@ -582,7 +582,7 @@ var testRun = function(programText, resultText) {
 	assert.deepEqual(scToString(evalsc(peg.parse(programText), e)), resultText);
 }
 
-//testRun("(let ((x 2) (y 5)) (+ x y))", "7");
+testRun("(let ((x 2) (y 5)) (+ x y))", "7");
 testRun("(map (lambda (x) (* x 2)) (list 1 2 3))", "(2 4 6)");
 testRun("((lambda ((n v)) v) (list 'x 2))", "2");
 testRun("(unzip (list (list 'x 2) (list 'y 5)))", "((x y) (2 5))");
