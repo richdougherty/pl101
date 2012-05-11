@@ -343,7 +343,7 @@ var alist_get = list_match(
 	}
 );
 var alist_put = function(alist, key, value) {
-	return cons(cons(key, value), alist);
+	return cons(sc(key, value), alist);
 };
 var js_obj_to_alist = function(obj) {
 	var alist = "null";
@@ -351,10 +351,10 @@ var js_obj_to_alist = function(obj) {
 	return alist;
 };
 
-assert.deepEqual(alist_get("null", "a"), null);
-assert.deepEqual(alist_get([["a", 1], "null"], "a"), ["a", 1]);
-assert.deepEqual(alist_put("null", "a", 1), [["a", 1], "null"]);
-assert.deepEqual(js_obj_to_alist({a: 1}), [["a", 1], "null"]);
+assert.deepEqual(alist_get(sc(), "a"), null);
+assert.deepEqual(alist_get(sc(sc("a", 1)), "a"), sc("a", 1));
+assert.deepEqual(alist_put(sc(), "a", 1), sc(sc("a", 1)));
+assert.deepEqual(js_obj_to_alist({a: 1}), sc(sc("a", 1)));
 
 ////
 
@@ -371,7 +371,7 @@ var bind = checked(function(name_tree, value_tree) {
 	} else if (name_tree == "_") {
 		return "null";
 	} else if (is_symbol(name_tree) && !is_null(name_tree)) {
-		return cons(cons(name_tree, value_tree), "null");
+		return cons(cons(name_tree, cons(value_tree, "null")), "null");
 	} else if (is_pair(name_tree) && is_pair(value_tree)) {
 		return append(
 			bind(car(name_tree), car(value_tree)),
@@ -383,14 +383,14 @@ var bind = checked(function(name_tree, value_tree) {
 }, [is_scheem, is_scheem], is_list);
 
 assert.deepEqual(bind("null", "null"), "null");
-assert.deepEqual(bind("a", 1), [["a", 1], "null"]);
-assert.deepEqual(bind(["a", "b"], [1, 2]), [["a", 1], [["b", 2], "null"]]);
+assert.deepEqual(bind("a", 1), sc(sc("a", 1)));
+assert.deepEqual(bind(["a", "b"], [1, 2]), sc(sc("a", 1), sc("b", 2)));
 assert.deepEqual(
 	scToString(bind(
 		peg.parse("((test . body) rest)"),
 		peg.parse("(((null? ()) 0) (#t 1))")
 	)),
-	scToString(peg.parse("((test . (null? ())) (body 0) (rest #t 1))"))
+	scToString(peg.parse("((test (null? ())) (body (0)) (rest (#t 1)))"))
 );
 
 var vau = tag_operative(function(operands, e, opt_name) {
@@ -445,7 +445,8 @@ var env_get = list_match(
 var lookup = checked(function (sym, e) {
 	var pair = env_get(e, sym);
 	if (pair == null) error('Cannot find symbol: '+sym);
-	return cdr(pair);
+	assert.deepEqual(cdr(cdr(pair)), "null");
+	return car(cdr(pair));
 }, [is_symbol, is_environment], is_scheem);
 
 // FIXME: Another name so don't override JS eval.
@@ -487,7 +488,7 @@ var set = checked(logFunc('set', function(name, value_operand, e) {
 	var current_scope = car(e);
 	var current_pair = alist_get(current_scope, name);
 	if (current_pair == null) { error('Undefined, cannot set: '+name); }
-	set_cdr(current_pair, value);
+	set_car(cdr(current_pair), value);
 	return value; // Optional.
 }), [is_symbol, is_scheem, is_environment], is_scheem);
 
@@ -539,7 +540,7 @@ var baseEnv = function() {
 			else if (is_symbol(obj)) {
 				var pair = env_get(e, name);
 				if (pair) {
-					return cdr(pair);
+					return car(cdr(pair));
 				} else {
 					return obj; // Not in env.
 				}
@@ -577,6 +578,7 @@ var run = function(programText) {
 var testRun = function(programText, resultText) {
 	console.log('Testing ', programText, ' -> ', resultText);
 	var e = baseEnv();
+	logFuncOn = false;
 	assert.deepEqual(scToString(evalsc(peg.parse(programText), e)), resultText);
 }
 
