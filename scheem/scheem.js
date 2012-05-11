@@ -78,10 +78,10 @@ function is_combiner(obj) {
 	return is_operative(obj) || is_applicative(obj);
 }
 function is_operative(obj) {
-	return obj.oper && _.isFunction(obj);
+	return (obj.oper != null) && _.isFunction(obj);
 }
 function is_applicative(obj) {
-	return obj.appl && typeof _.isFunction(obj);
+	return (obj.appl != null) && typeof _.isFunction(obj);
 }
 function is_scheem(obj) {
 	return is_symbol(obj) || is_number(obj) || is_pair(obj) || is_combiner(obj);
@@ -557,6 +557,8 @@ var baseEnv = function() {
 	define_fixed('null?', "(lambda (x) (eqv? x 'null))");
 	define_fixed('cond', "(vau ((test body) . rest) e " +
 		"(if (eval test e) (eval body e) (eval (cons cond rest) e)))");
+	define_fixed('map', "(lambda (f l) (if (null? l) 'null (cons (f (car l)) (map f (cdr l)))))");
+	define_fixed('unbind', "(lambda (l) (list (map (lambda ((n v)) n) l) (map (lambda ((n v)) v) l)))")
 	return e;
 };
 
@@ -574,10 +576,12 @@ var run = function(programText) {
 var testRun = function(programText, resultText) {
 	console.log('Testing ', programText, ' -> ', resultText);
 	var e = baseEnv();
-	//logFuncOn = true;
 	assert.deepEqual(scToString(evalsc(peg.parse(programText), e)), resultText);
 }
 
+testRun("(map (lambda (x) (* x 2)) (list 1 2 3))", "(2 4 6)");
+testRun("((lambda ((n v)) v) (list 'x 2))", "2");
+testRun("(unbind (list (list 'x 2) (list 'y 5)))", "((x y) (2 5))");
 testRun("(if (null? ()) 0 1)", "0");
 testRun("(if (null? (list 1 2)) 0 1)", "1");
 testRun("(cond ((null? ()) 0) (#t 1))", "0");
