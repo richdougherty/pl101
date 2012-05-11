@@ -30,5 +30,7 @@ validchar
 atom =
     chars:[0-9]+
     { return parseInt(chars.join(''), 10); }
+  / "-" chars:[0-9]+
+    { return -1 * parseInt(chars.join(''), 10); }
   / chars:validchar+
     { var s = chars.join(""); return (s == ".") ? null : s; }

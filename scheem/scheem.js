@@ -399,7 +399,7 @@ var vau = tag_operative(function(operands, e, opt_name) {
 	var body = cons(begin, cdr(cdr(operands)));
 	return tag_operative(function (operands2, e2) {
 		var bindings = append(bind(ptree, operands2), bind(etree, e2));
-		var e3 = cons(bindings, e2);
+		var e3 = cons(bindings, e);
 		return evalsc(body, e3);
 	}, opt_name || '@vau');
 }, 'vau');
@@ -485,10 +485,10 @@ var define = checked(logFunc('define', function(name, value_operand, e) {
 
 var set = checked(logFunc('set', function(name, value_operand, e) {
 	var value = evalsc(value_operand, e);
-	var current_scope = car(e);
-	var current_pair = alist_get(current_scope, name);
-	if (current_pair == null) { error('Undefined, cannot set: '+name); }
-	set_car(cdr(current_pair), value);
+	var pair = env_get(e, name);
+	if (pair == null) error('Cannot find symbol to set: '+name);
+	assert.deepEqual(cdr(cdr(pair)), "null");
+	set_car(cdr(pair), value);
 	return value; // Optional.
 }), [is_symbol, is_scheem, is_environment], is_scheem);
 
@@ -576,12 +576,16 @@ var run = function(programText) {
 };
 
 var testRun = function(programText, resultText) {
+	assert.ok(!!resultText);
 	console.log('Testing ', programText, ' -> ', resultText);
 	var e = baseEnv();
-	logFuncOn = false;
+	//logFuncOn = true;
 	assert.deepEqual(scToString(evalsc(peg.parse(programText), e)), resultText);
 }
 
+testRun("(((lambda (a) (lambda (b) (+ a b))) 1) 2)", "3")
+testRun("(+ 100 -20)", "80");
+testRun("(begin (define make-account (lambda (balance) (lambda (amt) (set! balance (+ balance amt)) balance))) (define a (make-account 100)) (a -20))", "80");
 testRun("(let ((x 2) (y 5)) (+ x y))", "7");
 testRun("(map (lambda (x) (* x 2)) (list 1 2 3))", "(2 4 6)");
 testRun("((lambda ((n v)) v) (list 'x 2))", "2");
