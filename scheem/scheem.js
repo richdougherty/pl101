@@ -611,7 +611,7 @@ testRun("(list (define x 2) (if (< x 5) 0 10))", '(2 0)');
 testRun("(list* 1 (list 2 3))", '(1 2 3)');
 testRun("(vau (x) e e)", '<oper-@vau>');
 testRun("(eval '1 '())", '1');
-testRun("(eval '(+ 1 2) (list (list (cons '+ +))))", '3');
+testRun("(eval '(+ 1 2) (list (list (list '+ +))))", '3');
 testRun("(lambda (x) (+ x 1))", '<appl-wrpd-@vau>');
 testRun("((lambda (x) (+ x 1)) 2)", '3');
 testRun("(apply + (list 1 2) ())", '3');
